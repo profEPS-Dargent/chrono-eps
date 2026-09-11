@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chrono EPS — Passages</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --card:     #1f2937;
+    --accent:   #22d3a5;
+    --accent2:  #818cf8;
+    --danger:   #f87171;
+    --text:     #f0f6fc;
+    --muted:    #8b949e;
+    --border:   #30363d;
+    --mono:     'DM Mono', monospace;
+    --sans:     'DM Sans', sans-serif;
+    --radius:   12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: .04em;
+  }
+  #clock {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: .06em;
+  }
+  #status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+    margin-right: 8px;
+    transition: background .3s;
+  }
+  #status-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  #status-dot.error  { background: var(--danger); }
+
+  /* ── CAMERA ZONE ── */
+  #camera-zone {
+    position: relative;
+    background: #000;
+    overflow: hidden;
+  }
+  #video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  #canvas { display: none; }
+
+  /* Viseur */
+  #viewfinder {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 220px; height: 220px;
+    pointer-events: none;
+  }
+  .corner {
+    position: absolute;
+    width: 30px; height: 30px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: .8;
+  }
+  .corner.tl { top:0; left:0;  border-width: 3px 0 0 3px; }
+  .corner.tr { top:0; right:0; border-width: 3px 3px 0 0; }
+  .corner.bl { bottom:0; left:0;  border-width: 0 0 3px 3px; }
+  .corner.br { bottom:0; right:0; border-width: 0 3px 3px 0; }
+
+  /* Flash de détection */
+  #flash {
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .08s;
+  }
+  #flash.show { opacity: .18; }
+
+  /* Dernier passage affiché en grand */
+  #last-pass {
+    position: absolute;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(13,17,23,.82);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 10px 24px;
+    text-align: center;
+    display: none;
+    backdrop-filter: blur(6px);
+  }
+  #last-pass .name {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: .04em;
+  }
+  #last-pass .info {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ── PANNEAU DROITE ── */
+  #panel {
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Config Sheets */
+  #config-bar {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #config-bar label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: .05em;
+  }
+  #config-bar input {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    margin-bottom: 8px;
+  }
+  #config-bar input:focus { border-color: var(--accent); }
+  #config-bar input::placeholder { color: var(--muted); }
+
+  /* Boutons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: #0d1117; }
+  .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  #config-bar .btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  /* Stats */
+  #stats-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat {
+    background: var(--surface);
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .stat .val {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .stat .lbl {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+    letter-spacing: .04em;
+  }
+
+  /* Log des passages */
+  #log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #log-header span {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: .04em;
+  }
+
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .log-row {
+    display: grid;
+    grid-template-columns: 1fr 60px 80px;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    background: var(--card);
+    border: 1px solid transparent;
+    animation: slide-in .2s ease;
+  }
+  .log-row.new-row {
+    border-color: var(--accent);
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateX(12px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .log-row .eleve {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .log-row .tour {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .log-row .heure {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent2);
+    text-align: right;
+  }
+
+  /* Export */
+  #export-zone {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Setup overlay */
+  #setup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(13,17,23,.96);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+  }
+  #setup-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 460px;
+    width: 90%;
+  }
+  #setup-box h2 {
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  #setup-box p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+  #setup-box .field {
+    margin-bottom: 14px;
+  }
+  #setup-box label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: .04em;
+  }
+  #setup-box input {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+  }
+  #setup-box input:focus { border-color: var(--accent); }
+  #setup-box .hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 5px;
+    opacity: .7;
+  }
+  #error-msg {
+    font-size: 12px;
+    color: var(--danger);
+    margin-top: 10px;
+    display: none;
+  }
+
+  #cooldown-bar {
+    position: absolute;
+    bottom: 0; left: 0;
+    height: 3px;
+    background: var(--accent);
+    width: 0%;
+    transition: width linear;
+  }
+</style>
+</head>
+<body>
+
+<!-- SETUP OVERLAY -->
+<div id="setup-overlay">
+  <div id="setup-box">
+    <h2>Chrono EPS — Configuration</h2>
+    <p>Renseigne les informations de ta session. Les passages seront enregistrés dans Google Sheets via un webhook Apps Script.</p>
+
+    <div class="field">
+      <label>URL du webhook Google Apps Script</label>
+      <input type="text" id="input-webhook" placeholder="https://script.google.com/macros/s/.../exec">
+      <div class="hint">Voir le guide fourni pour créer ce lien en 2 min.</div>
+    </div>
+    <div class="field">
+      <label>Nom de la session (ex : Cross 3e A – 12 nov)</label>
+      <input type="text" id="input-session" placeholder="Cross 3e A">
+    </div>
+    <div class="field">
+      <label>Cooldown entre deux scans du même élève (secondes)</label>
+      <input type="number" id="input-cooldown" value="15" min="3" max="120">
+      <div class="hint">Évite de compter deux fois un même passage rapproché.</div>
+    </div>
+    <div id="error-msg"></div>
+    <br>
+    <button class="btn btn-primary" id="btn-start-session" onclick="startSession()" style="width:100%;padding:12px;">
+      Démarrer la session
+    </button>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <h1><span id="status-dot"></span>Chrono EPS — <span id="session-name">—</span></h1>
+  <div id="clock">00:00:00</div>
+</header>
+
+<!-- CAMERA -->
+<div id="camera-zone">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="viewfinder">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+  </div>
+  <div id="flash"></div>
+  <div id="last-pass">
+    <div class="name" id="lp-name">—</div>
+    <div class="info" id="lp-info">—</div>
+  </div>
+  <div id="cooldown-bar"></div>
+</div>
+
+<!-- PANNEAU DROITE -->
+<div id="panel">
+  <div id="config-bar">
+    <label>GOOGLE SHEETS — WEBHOOK</label>
+    <input type="text" id="webhook-display" placeholder="Non configuré" readonly>
+    <label style="margin-top:6px">SESSION</label>
+    <input type="text" id="session-display" placeholder="—" readonly>
+    <div class="btn-row">
+      <button class="btn btn-secondary" style="flex:1" onclick="showSetup()">Modifier</button>
+      <button class="btn btn-danger" style="flex:1" onclick="clearLog()">Vider log</button>
+    </div>
+  </div>
+
+  <div id="stats-bar">
+    <div class="stat">
+      <div class="val" id="stat-passages">0</div>
+      <div class="lbl">passages</div>
+    </div>
+    <div class="stat">
+      <div class="val" id="stat-eleves">0</div>
+      <div class="lbl">élèves</div>
+    </div>
+    <div class="stat">
+      <div class="val" id="stat-max">—</div>
+      <div class="lbl">max tours</div>
+    </div>
+  </div>
+
+  <div id="log-header">
+    <span>DERNIERS PASSAGES</span>
+    <span id="sync-status" style="color:var(--accent)">prêt</span>
+  </div>
+
+  <div id="log"></div>
+
+  <div id="export-zone">
+    <button class="btn btn-secondary" style="flex:1" onclick="exportCSV()">Exporter CSV</button>
+    <button class="btn btn-primary" style="flex:1" onclick="syncAll()">Sync Sheets</button>
+  </div>
+</div>
+
+<script>
+// ── STATE ──
+let webhookURL = '';
+let sessionName = '';
+let cooldownSec = 15;
+let passages = []; // { eleve, heure, horodatage, tour, synced }
+let lastScan = {}; // eleve -> timestamp
+let tourCount = {}; // eleve -> nb tours
+let sessionStart = null;
+
+// ── CLOCK ──
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── SETUP ──
+function startSession() {
+  const wh = document.getElementById('input-webhook').value.trim();
+  const sn = document.getElementById('input-session').value.trim();
+  const cd = parseInt(document.getElementById('input-cooldown').value) || 15;
+  const err = document.getElementById('error-msg');
+
+  if (!sn) { err.textContent = 'Donne un nom à la session.'; err.style.display='block'; return; }
+
+  webhookURL = wh;
+  sessionName = sn;
+  cooldownSec = cd;
+  sessionStart = new Date();
+
+  document.getElementById('setup-overlay').style.display = 'none';
+  document.getElementById('session-name').textContent = sessionName;
+  document.getElementById('webhook-display').value = webhookURL || '(mode hors-ligne)';
+  document.getElementById('session-display').value = sessionName;
+
+  startCamera();
+}
+
+function showSetup() {
+  document.getElementById('setup-overlay').style.display = 'flex';
+}
+
+// ── CAMERA ──
+let scanning = true;
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    video.addEventListener('loadedmetadata', () => {
+      video.play();
+      document.getElementById('status-dot').className = 'active';
+      requestAnimationFrame(scanLoop);
+    });
+  } catch(e) {
+    document.getElementById('status-dot').className = 'error';
+    document.getElementById('sync-status').textContent = 'caméra refusée';
+    document.getElementById('sync-status').style.color = 'var(--danger)';
+  }
+}
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+function scanLoop() {
+  if (!scanning) { requestAnimationFrame(scanLoop); return; }
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: 'dontInvert'
+    });
+    if (code) {
+      handleScan(code.data.trim());
+    }
+  }
+  requestAnimationFrame(scanLoop);
+}
+
+// ── SCAN ──
+function handleScan(eleve) {
+  const now = Date.now();
+  const last = lastScan[eleve] || 0;
+  if (now - last < cooldownSec * 1000) return; // cooldown
+
+  lastScan[eleve] = now;
+  tourCount[eleve] = (tourCount[eleve] || 0) + 1;
+  const tour = tourCount[eleve];
+
+  const dateObj = new Date();
+  const heure = dateObj.toLocaleTimeString('fr-FR');
+  const horodatage = dateObj.toISOString();
+
+  const passage = { eleve, heure, horodatage, tour, synced: false };
+  passages.unshift(passage);
+
+  // Feedback visuel
+  flashScreen();
+  showLastPass(eleve, tour, heure);
+
+  // Log
+  addLogRow(eleve, tour, heure, true);
+  updateStats();
+
+  // Envoi Sheets
+  if (webhookURL) sendToSheets(passage);
+}
+
+function flashScreen() {
+  const f = document.getElementById('flash');
+  f.classList.add('show');
+  setTimeout(() => f.classList.remove('show'), 200);
+}
+
+function showLastPass(eleve, tour, heure) {
+  const lp = document.getElementById('last-pass');
+  document.getElementById('lp-name').textContent = eleve;
+  document.getElementById('lp-info').textContent = `Tour ${tour} — ${heure}`;
+  lp.style.display = 'block';
+  clearTimeout(lp._timer);
+  lp._timer = setTimeout(() => lp.style.display = 'none', 4000);
+}
+
+// ── LOG ──
+function addLogRow(eleve, tour, heure, isNew) {
+  const log = document.getElementById('log');
+  const row = document.createElement('div');
+  row.className = 'log-row' + (isNew ? ' new-row' : '');
+  row.innerHTML = `
+    <div class="eleve">${escHtml(eleve)}</div>
+    <div class="tour">Tour ${tour}</div>
+    <div class="heure">${heure}</div>
+  `;
+  log.prepend(row);
+  if (isNew) setTimeout(() => row.classList.remove('new-row'), 1500);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function clearLog() {
+  if (!confirm('Vider tous les passages ? Cette action est irréversible.')) return;
+  passages = [];
+  lastScan = {};
+  tourCount = {};
+  document.getElementById('log').innerHTML = '';
+  updateStats();
+}
+
+// ── STATS ──
+function updateStats() {
+  document.getElementById('stat-passages').textContent = passages.length;
+  const eleves = new Set(passages.map(p => p.eleve));
+  document.getElementById('stat-eleves').textContent = eleves.size;
+  const maxTour = Object.values(tourCount).length ? Math.max(...Object.values(tourCount)) : '—';
+  document.getElementById('stat-max').textContent = maxTour;
+}
+
+// ── GOOGLE SHEETS ──
+async function sendToSheets(passage) {
+  if (!webhookURL) return;
+  const syncEl = document.getElementById('sync-status');
+  syncEl.textContent = 'envoi…';
+  syncEl.style.color = 'var(--muted)';
+  try {
+    await fetch(webhookURL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session: sessionName,
+        eleve: passage.eleve,
+        tour: passage.tour,
+        heure: passage.heure,
+        horodatage: passage.horodatage
+      })
+    });
+    passage.synced = true;
+    syncEl.textContent = 'sync OK';
+    syncEl.style.color = 'var(--accent)';
+  } catch(e) {
+    syncEl.textContent = 'hors-ligne';
+    syncEl.style.color = 'var(--danger)';
+  }
+}
+
+async function syncAll() {
+  const unsynced = passages.filter(p => !p.synced);
+  if (!unsynced.length) { alert('Tout est déjà synchronisé !'); return; }
+  if (!webhookURL) { alert('Aucun webhook configuré.'); return; }
+  for (const p of unsynced) await sendToSheets(p);
+}
+
+// ── EXPORT CSV ──
+function exportCSV() {
+  if (!passages.length) { alert('Aucun passage enregistré.'); return; }
+  const header = 'Session,Élève,Tour,Heure,Horodatage ISO\n';
+  const rows = [...passages].reverse().map(p =>
+    `"${sessionName}","${p.eleve}",${p.tour},"${p.heure}","${p.horodatage}"`
+  ).join('\n');
+  const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chrono-eps-${sessionName.replace(/\s+/g,'-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
